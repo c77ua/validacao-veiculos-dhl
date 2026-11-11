@@ -19,10 +19,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const SPREADSHEET_ID = '1IJt05Tr1rJf5GQJ76BwPKKf4rR_czxiYElOU9uPlBr0';
 
-const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, 'credentials.json'),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets']
-});
+let auth;
+if (process.env.GOOGLE_CREDENTIALS) {
+  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+  auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets']
+  });
+} else {
+  auth = new google.auth.GoogleAuth({
+    keyFile: path.join(__dirname, 'credentials.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets']
+  });
+}
 
 async function getSheetsClient() {
   const authClient = await auth.getClient();
@@ -31,7 +40,7 @@ async function getSheetsClient() {
 
 // ===== ROTAS DA API =====
 
-// 1. Rota de Login (COM VALIDAÇÃO DE CARGO DA PLANILHA - COLUNA C)
+// 1. Rota de Login
 app.post('/api/login', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
@@ -49,7 +58,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(404).json({ error: 'Aba de usuários não encontrada.' });
     }
 
-    // Leitura das Colunas A (Usuário), B (Senha) e C (Cargo)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${nomeAbaUsuarios}'!A2:C`
@@ -66,7 +74,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
     }
 
-    // Validação estrita do Cargo (Coluna C da Planilha)
     const cargoCadastrado = String(usuarioEncontrado[2] || '').trim().toUpperCase();
     const cargoSelecionado = String(cargo).trim().toUpperCase();
 
@@ -132,7 +139,7 @@ app.get('/api/patio', async (req, res) => {
   }
 });
 
-// 3. Rota dos Relatórios (Lê de A2 até AP)
+// 3. Rota dos Relatórios
 app.get('/api/reports', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
@@ -186,8 +193,8 @@ app.get('/api/reports', async (req, res) => {
         doca: r[37] || '',
         substatus: r[38] || '',
         ocupacao: r[39] || '',
-        infrutifero: r[40] || '', // Coluna AO
-        status1: r[41] || ''       // Coluna AP
+        infrutifero: r[40] || '',
+        status1: r[41] || ''
       }));
 
     return res.status(200).json(reports);
@@ -196,7 +203,7 @@ app.get('/api/reports', async (req, res) => {
   }
 });
 
-// 4. Rota para Salvar Report (Grava todos os dados do veículo, inclusive se for Infrutífero)
+// 4. Rota para Salvar Report
 app.post('/api/salvar-report', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
@@ -204,52 +211,50 @@ app.post('/api/salvar-report', async (req, res) => {
     const agora = new Date().toLocaleString('pt-BR');
 
     const novaLinha = [
-      agora,                           // Coluna A: ID_REPORT / DataHora
-      d.data || agora.split(' ')[0],   // Coluna B: DATA OPERAÇÃO
-      d.protocolo || '',               // Coluna C: PROTOCOLO
-      d.prazoEta || '',                // Coluna D: PRAZO_ETA
-      d.prazoCpt || '',                // Coluna E: PRAZO_CPT
-      d.origem || '',                  // Coluna F: ORIGEM
-      d.destino || '',                 // Coluna G: DESTINO
-      d.responsavel || '',             // Coluna H: RESPONSÁVEL
-      d.horarioChegada || '',          // Coluna I: HORÁRIO CHEGADA
-      d.horarioSaida || '',            // Coluna J: HORÁRIO SAÍDA
-      d.transportadora || '',          // Coluna K: TRANSPORTADORA
-      d.placa || '',                   // Coluna L: PLACA
-      d.perfilSolicitado || '',        // Coluna M: PERFIL_SOLICITADO
-      d.perfilRosterizado || '',       // Coluna N: PERFIL_ROSTERIZADO
-      d.corda || '',                   // Coluna O: POSSUI CORDA
-      d.qtsCorda || '',                // Coluna P: QTS CORDA
-      d.l1 || '',                      // Coluna Q: LACRE I
-      d.l2 || '',                      // Coluna R: LACRE II
-      d.l3 || '',                      // Coluna S: LACRE III
-      d.l4 || '',                      // Coluna T: LACRE IIII
-      d.l5 || '',                      // Coluna U: LACRE IIIII
-      d.fotos?.lacre || '',            // Coluna V: FOTO LACRE
-      agora,                           // Coluna W: INICIO PREENCHIMENTO
-      d.tipoVeiculo || '',             // Coluna X: TIPO VEÍCULO
-      d.pacotes || '',                 // Coluna Y: QTD PACOTES
-      d.pallets || '',                 // Coluna Z: QTD PALLETES
-      d.qtdGaylord || '',              // Coluna AA: QTD GAYLORD
-      d.kitManga || '',                // Coluna AB: QTD KIT MANGA
-      d.granel || '',                  // Coluna AC: QTD POSIÇÃO GRANEL
-      d.plv || '',                     // Coluna AD: QTD POSIÇÕES PLV
-      d.ocupadas || '',                // Coluna AE: QTD POSIÇÕES OCUPADAS
-      agora,                           // Coluna AF: FIM PREENCHIMENTO
-      d.fotos?.bau || '',              // Coluna AG: FOTO BÁU
-      d.fotos?.romaneio || '',         // Coluna AH: FOTO ROMANEIO
-      'REPORTADO',                     // Coluna AI: STATUS
-      agora,                           // Coluna AJ: HORA_LANÇAMENTO
-      d.observacao || '',              // Coluna AK: OBSERVAÇÃO
-      d.doca || '',                    // Coluna AL: DOCA
-      d.substatus || '',               // Coluna AM: SUBSTATUS
-      d.ocupacao || '',                // Coluna AN: OCUPAÇÃO
-      d.infrutifero || ''              // Coluna AO: INFRUTIFERO
+      agora,
+      d.data || agora.split(' ')[0],
+      d.protocolo || '',
+      d.prazoEta || '',
+      d.prazoCpt || '',
+      d.origem || '',
+      d.destino || '',
+      d.responsavel || '',
+      d.horarioChegada || '',
+      d.horarioSaida || '',
+      d.transportadora || '',
+      d.placa || '',
+      d.perfilSolicitado || '',
+      d.perfilRosterizado || '',
+      d.corda || '',
+      d.qtsCorda || '',
+      d.l1 || '',
+      d.l2 || '',
+      d.l3 || '',
+      d.l4 || '',
+      d.l5 || '',
+      d.fotos?.lacre || '',
+      agora,
+      d.tipoVeiculo || '',
+      d.pacotes || '',
+      d.pallets || '',
+      d.qtdGaylord || '',
+      d.kitManga || '',
+      d.granel || '',
+      d.plv || '',
+      d.ocupadas || '',
+      agora,
+      d.fotos?.bau || '',
+      d.fotos?.romaneio || '',
+      'REPORTADO',
+      agora,
+      d.observacao || '',
+      d.doca || '',
+      d.substatus || '',
+      d.ocupacao || '',
+      d.infrutifero || ''
     ];
 
     const sheets = await getSheetsClient();
-    
-    // Procura a primeira linha livre inspecionando a Coluna A
     const colA = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'REPORTS!A:A'
@@ -258,7 +263,6 @@ app.post('/api/salvar-report', async (req, res) => {
     const totalLinhasPreenchidas = colA.data.values ? colA.data.values.length : 1;
     const proximaLinha = totalLinhasPreenchidas + 1;
 
-    // Atualiza estritamente entre A e AO (deixando a AP livre para a fórmula)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `REPORTS!A${proximaLinha}:AO${proximaLinha}`,
@@ -270,6 +274,89 @@ app.post('/api/salvar-report', async (req, res) => {
   } catch (err) {
     console.error('Erro ao salvar report:', err.message);
     return res.status(500).json({ error: 'Falha ao salvar report no Google Sheets.' });
+  }
+});
+
+// 5. Rota para Editar Report
+app.put('/api/editar-report', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  try {
+    const d = req.body || {};
+    if (!d.protocolo) {
+      return res.status(400).json({ error: 'Protocolo é obrigatório para atualização.' });
+    }
+
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'REPORTS!A2:C'
+    });
+
+    const rows = response.data.values || [];
+    const indexLinha = rows.findIndex(r => String(r[2] || '').trim() === String(d.protocolo).trim());
+
+    if (indexLinha === -1) {
+      return res.status(404).json({ error: 'Report com o protocolo informado não foi encontrado.' });
+    }
+
+    const numLinha = indexLinha + 2;
+    const eInfrutifero = String(d.infrutifero || '').trim().toUpperCase() === 'SIM';
+
+    const linhaEditada = [
+      new Date().toLocaleString('pt-BR'),
+      d.data || '',
+      d.protocolo,
+      d.prazoEta || '',
+      d.prazoCpt || '',
+      d.origem || '',
+      d.destino || '',
+      d.responsavel || '',
+      d.horarioChegada || '',
+      d.horarioSaida || '',
+      d.transportadora || '',
+      d.placa || '',
+      d.perfilSolicitado || '',
+      d.perfilRosterizado || '',
+      eInfrutifero ? '' : (d.corda || ''),
+      d.qtsCorda || '',
+      eInfrutifero ? '' : (d.l1 || ''),
+      eInfrutifero ? '' : (d.l2 || ''),
+      eInfrutifero ? '' : (d.l3 || ''),
+      eInfrutifero ? '' : (d.l4 || ''),
+      eInfrutifero ? '' : (d.l5 || ''),
+      eInfrutifero ? '' : (d.fotos?.lacre || ''),
+      new Date().toLocaleString('pt-BR'),
+      d.tipoVeiculo || '',
+      eInfrutifero ? '' : (d.pacotes || ''),
+      eInfrutifero ? '' : (d.pallets || ''),
+      eInfrutifero ? '' : (d.qtdGaylord || ''),
+      eInfrutifero ? '' : (d.kitManga || ''),
+      eInfrutifero ? '' : (d.granel || ''),
+      eInfrutifero ? '' : (d.plv || ''),
+      eInfrutifero ? '' : (d.ocupadas || ''),
+      new Date().toLocaleString('pt-BR'),
+      eInfrutifero ? '' : (d.fotos?.bau || ''),
+      eInfrutifero ? '' : (d.fotos?.romaneio || ''),
+      'REPORTADO',
+      new Date().toLocaleString('pt-BR'),
+      d.observacao || '',
+      d.doca || '',
+      d.substatus || '',
+      d.ocupacao || '',
+      d.infrutifero || ''
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `REPORTS!A${numLinha}:AO${numLinha}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [linhaEditada] }
+    });
+
+    return res.status(200).json({ ok: true, message: 'Report atualizado com sucesso!' });
+  } catch (err) {
+    console.error('Erro ao editar report:', err.message);
+    return res.status(500).json({ error: 'Falha ao atualizar report no Google Sheets.' });
   }
 });
 
