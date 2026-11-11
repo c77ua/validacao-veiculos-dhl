@@ -289,7 +289,7 @@
   .topo-acoes-bar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
   @media (min-width: 640px) { .topo-acoes-bar { flex-direction: row; align-items: center; } }
 
-  .busca-wrap { flex: 1; position: relative; color: var(--suave); margin-bottom: 0; }
+  .busca-wrap { flex: 1; position: relative; color: var(--suave); margin-bottom: 12px; }
   .busca-wrap::before { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; pointer-events: none; }
   .busca {
     width: 100%; min-height: 46px; padding: 10px 14px 10px 42px; font: inherit; font-size: 13.5px; color: var(--texto);
@@ -308,7 +308,7 @@
   .btn-exportar:hover { background: var(--fundo); border-color: var(--suave); transform: translateY(-1px); }
 
   /* ==========================================================================
-     4. TABELAS DE CARGA ENTERPRISE (ROW CARDS)
+     4. TABELAS DE CARGA ENTERPRISE (ROW CARDS E GRUPOS CPT)
      ========================================================================== */
   .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
   .lista > li { animation: entra .28s cubic-bezier(0, 0, 0.2, 1) both; }
@@ -318,6 +318,15 @@
 
   .sk { height: 76px; border-radius: 14px; background: linear-gradient(90deg, var(--linha) 25%, var(--papel) 37%, var(--linha) 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
   @keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  .grupo-cpt { margin-bottom: 24px; }
+  .grupo-cpt-header {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--amarelo-suave); border: 1px solid #FDE68A; color: #78350F;
+    padding: 10px 16px; border-radius: 12px; font-weight: 800; font-size: 13px; margin-bottom: 10px;
+  }
+  body.dark-mode .grupo-cpt-header { background: #2A2400; border-color: #78350F; color: #FDE68A; }
+  .grupo-cpt-header span.qtd-tag { font-size: 11px; background: var(--papel); padding: 2px 8px; border-radius: 99px; border: 1px solid var(--linha); color: var(--tinta); }
 
   .cab { display: none; }
   .linhas .lista { gap: 10px; }
@@ -353,7 +362,8 @@
     .kpi-n { font-size: 34px; }
     .kpi-icon-pill { width: 40px; height: 40px; border-radius: 12px; }
     
-    .linhas { background: var(--papel); border: 1px solid var(--linha); border-radius: 20px; overflow: hidden; box-shadow: var(--sombra); }
+    .linhas { background: transparent; border: 0; box-shadow: none; border-radius: 0; overflow: visible; }
+    .grupo-cpt-table { background: var(--papel); border: 1px solid var(--linha); border-radius: 20px; overflow: hidden; box-shadow: var(--sombra); margin-bottom: 24px; }
     .linhas .lista { gap: 0; }
     .linhas li { border-bottom: 1px solid var(--linha); animation: none; }
     .linhas li:last-child { border-bottom: 0; }
@@ -776,8 +786,7 @@
     <div class="busca-wrap">
       <input class="busca" id="busca" type="search" placeholder="Buscar por protocolo, Route ID, placa ou transportadora" autocomplete="off" aria-label="Buscar carga no pátio">
     </div>
-    <div class="linhas">
-      <div class="cab" aria-hidden="true"><span>Protocolo</span><span>Route ID</span><span>Transportadora</span><span>Placa Cavalo</span><span>Data</span><span>Prazo CPT</span><span></span></div>
+    <div class="linhas" id="container-patio">
       <ul class="lista" id="lista-patio"></ul>
     </div>
   </section>
@@ -1219,33 +1228,92 @@
   $('tab-reports').onclick = () => aba('reports');
   $('tab-dash').onclick = () => aba('dash');
 
+  /* ==========================================================================
+     LÓGICA DE AGRUPAMENTO POR PRAZO CPT (TELA PÁTIO)
+     ========================================================================== */
   function renderPatio() {
     const q = $('busca').value.trim().toLowerCase();
-    const ul = $('lista-patio'); ul.replaceChildren();
+    const container = $('container-patio'); container.replaceChildren();
+    
     const itens = patio.filter(v => (v.protocolo + ' ' + v.routeId + ' ' + v.transportadora + ' ' + v.placa).toLowerCase().includes(q));
     $('n-patio').textContent = patio.length ? patio.length : '';
+
     if (!itens.length) {
-      ul.appendChild(el('li', 'vazio', patio.length ? 'Nenhuma carga encontrada.' : 'Nenhuma carga para o dia de hoje aguardando report.'));
+      const ulVazio = el('ul', 'lista');
+      ulVazio.appendChild(el('li', 'vazio', patio.length ? 'Nenhuma carga encontrada.' : 'Nenhuma carga para o dia de hoje aguardando report.'));
+      container.appendChild(ulVazio);
       return;
     }
+
+    // Agrupa cargas por Prazo CPT
+    const grupos = {};
     itens.forEach(v => {
-      const li = el('li'); const b = el('button', 'item');
-      b.appendChild(el('span', 'c-protocolo', v.protocolo));
-      b.appendChild(el('span', 'c-route', v.routeId));
-      b.appendChild(el('span', 'c-transp', v.transportadora));
-      b.appendChild(el('span', 'c-placa', v.placa || '-'));
-      b.appendChild(el('span', 'c-data', v.data));
-      b.appendChild(el('span', 'c-cpt', v.prazoCpt));
+      const cptKey = v.prazoCpt || 'Sem Prazo CPT';
+      if (!grupos[cptKey]) grupos[cptKey] = [];
+      grupos[cptKey].push(v);
+    });
 
-      if (usuarioLogado && !usuarioLogado.podeReportar) {
-        b.classList.add('sem-acesso');
-        b.appendChild(el('span', 'seta cadeado'));
-      } else {
-        b.appendChild(el('span', 'seta', '›'));
-        b.onclick = () => abrirForm(v, false);
-      }
+    // Ordena as chaves do CPT cronologicamente
+    const chavesOrdenadas = Object.keys(grupos).sort((a, b) => {
+      const dtA = parseDataHora(a);
+      const dtB = parseDataHora(b);
+      if (dtA && dtB) return dtA - dtB;
+      if (dtA) return -1;
+      if (dtB) return 1;
+      return a.localeCompare(b);
+    });
 
-      li.appendChild(b); ul.appendChild(li);
+    // Renderiza cada grupo
+    chavesOrdenadas.forEach(cptKey => {
+      const listaGrupo = grupos[cptKey];
+      
+      const grupoDiv = el('div', 'grupo-cpt');
+      
+      // Header do Grupo
+      const header = el('div', 'grupo-cpt-header');
+      header.appendChild(el('span', null, `⏱️ Prazo CPT: ${cptKey}`));
+      header.appendChild(el('span', 'qtd-tag', `${listaGrupo.length} ${listaGrupo.length === 1 ? 'veículo' : 'veículos'}`));
+      grupoDiv.appendChild(header);
+
+      const tableContainer = el('div', 'grupo-cpt-table');
+      const cab = el('div', 'cab');
+      cab.setAttribute('aria-hidden', 'true');
+      cab.append(
+        el('span', null, 'Protocolo'),
+        el('span', null, 'Route ID'),
+        el('span', null, 'Transportadora'),
+        el('span', null, 'Placa Cavalo'),
+        el('span', null, 'Data'),
+        el('span', null, 'Prazo CPT'),
+        el('span', null, '')
+      );
+      tableContainer.appendChild(cab);
+
+      const ul = el('ul', 'lista');
+
+      listaGrupo.forEach(v => {
+        const li = el('li'); const b = el('button', 'item');
+        b.appendChild(el('span', 'c-protocolo', v.protocolo));
+        b.appendChild(el('span', 'c-route', v.routeId));
+        b.appendChild(el('span', 'c-transp', v.transportadora));
+        b.appendChild(el('span', 'c-placa', v.placa || '-'));
+        b.appendChild(el('span', 'c-data', v.data));
+        b.appendChild(el('span', 'c-cpt', v.prazoCpt));
+
+        if (usuarioLogado && !usuarioLogado.podeReportar) {
+          b.classList.add('sem-acesso');
+          b.appendChild(el('span', 'seta cadeado'));
+        } else {
+          b.appendChild(el('span', 'seta', '›'));
+          b.onclick = () => abrirForm(v, false);
+        }
+
+        li.appendChild(b); ul.appendChild(li);
+      });
+
+      tableContainer.appendChild(ul);
+      grupoDiv.appendChild(tableContainer);
+      container.appendChild(grupoDiv);
     });
   }
 
@@ -1541,7 +1609,7 @@
   };
 
   function carregarPrimeiraVez() {
-    esqueleto($('lista-patio'), 3);
+    esqueleto($('container-patio'), 3);
     esqueleto($('lista-reports'), 3);
     carregarSilencioso();
   }
