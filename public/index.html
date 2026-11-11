@@ -1656,6 +1656,7 @@
     }
   }
 
+  // Função otimizada para qualidade 0.8 (ideal para upload e salvamento em nuvem)
   function reduzir(file) {
     return new Promise((ok, falha) => {
       const url = URL.createObjectURL(file), img = new Image();
@@ -1665,7 +1666,7 @@
         c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
-        ok(c.toDataURL('image/jpeg', 0.7));
+        ok(c.toDataURL('image/jpeg', 0.8));
       };
       img.onerror = () => { URL.revokeObjectURL(url); falha(new Error('Não foi possível ler a foto.')); };
       img.src = url;
@@ -1798,7 +1799,7 @@
 
     const rota = modoEdicao ? '/api/editar-report' : '/api/salvar-report';
     const metodo = modoEdicao ? 'PUT' : 'POST';
-
+    
     fetch(rota, {
       method: metodo,
       headers: { 'Content-Type': 'application/json' },

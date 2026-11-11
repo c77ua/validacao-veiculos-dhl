@@ -1,11 +1,12 @@
 const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -36,6 +37,36 @@ if (process.env.GOOGLE_CREDENTIALS) {
 async function getSheetsClient() {
   const authClient = await auth.getClient();
   return google.sheets({ version: 'v4', auth: authClient });
+}
+
+// ===== FUNÇÃO AUXILIAR PARA SALVAR IMAGENS LOCALMENTE =====
+function salvarImagemLocal(base64Data, prefixo, protocolo) {
+  if (!base64Data || typeof base64Data !== 'string' || !base64Data.startsWith('data:image')) {
+    return '';
+  }
+  try {
+    const matches = base64Data.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return '';
+    }
+    const extensao = matches[1].includes('png') ? 'png' : 'jpg';
+    const buffer = Buffer.from(matches[2], 'base64');
+    
+    const nomeFicheiro = `${prefixo}_${protocolo}_${Date.now()}.${extensao}`;
+    const dirUploads = path.join(__dirname, 'public', 'uploads');
+    
+    if (!fs.existsSync(dirUploads)) {
+      fs.mkdirSync(dirUploads, { recursive: true });
+    }
+
+    const caminhoCompleto = path.join(dirUploads, nomeFicheiro);
+    fs.writeFileSync(caminhoCompleto, buffer);
+    
+    return `/uploads/${nomeFicheiro}`;
+  } catch (erro) {
+    console.error("Erro ao salvar imagem localmente:", erro);
+    return '';
+  }
 }
 
 // ===== ROTAS DA API =====
@@ -209,11 +240,17 @@ app.post('/api/salvar-report', async (req, res) => {
   try {
     const d = req.body || {};
     const agora = new Date().toLocaleString('pt-BR');
+    const protocolo = d.protocolo || 'geral';
+
+    // Salva as fotos localmente para evitar estourar o limite de 50.000 caracteres da célula
+    const urlLacre = salvarImagemLocal(d.fotos?.lacre, 'lacre', protocolo);
+    const urlBau = salvarImagemLocal(d.fotos?.bau, 'bau', protocolo);
+    const urlRomaneio = salvarImagemLocal(d.fotos?.romaneio, 'romaneio', protocolo);
 
     const novaLinha = [
       agora,
       d.data || agora.split(' ')[0],
-      d.protocolo || '',
+      protocolo,
       d.prazoEta || '',
       d.prazoCpt || '',
       d.origem || '',
@@ -232,7 +269,7 @@ app.post('/api/salvar-report', async (req, res) => {
       d.l3 || '',
       d.l4 || '',
       d.l5 || '',
-      d.fotos?.lacre || '',
+      urlLacre,
       agora,
       d.tipoVeiculo || '',
       d.pacotes || '',
@@ -243,8 +280,8 @@ app.post('/api/salvar-report', async (req, res) => {
       d.plv || '',
       d.ocupadas || '',
       agora,
-      d.fotos?.bau || '',
-      d.fotos?.romaneio || '',
+      urlBau,
+      urlRomaneio,
       'REPORTADO',
       agora,
       d.observacao || '',
@@ -301,11 +338,17 @@ app.put('/api/editar-report', async (req, res) => {
 
     const numLinha = indexLinha + 2;
     const eInfrutifero = String(d.infrutifero || '').trim().toUpperCase() === 'SIM';
+    const protocolo = d.protocolo;
+
+    // Salva as fotos atualizadas localmente caso tenham sido alteradas
+    const urlLacre = salvarImagemLocal(d.fotos?.lacre, 'lacre', protocolo);
+    const urlBau = salvarImagemLocal(d.fotos?.bau, 'bau', protocolo);
+    const urlRomaneio = salvarImagemLocal(d.fotos?.romaneio, 'romaneio', protocolo);
 
     const linhaEditada = [
       new Date().toLocaleString('pt-BR'),
       d.data || '',
-      d.protocolo,
+      protocolo,
       d.prazoEta || '',
       d.prazoCpt || '',
       d.origem || '',
@@ -324,7 +367,7 @@ app.put('/api/editar-report', async (req, res) => {
       eInfrutifero ? '' : (d.l3 || ''),
       eInfrutifero ? '' : (d.l4 || ''),
       eInfrutifero ? '' : (d.l5 || ''),
-      eInfrutifero ? '' : (d.fotos?.lacre || ''),
+      eInfrutifero ? '' : (urlLacre || d.fotos?.lacre || ''),
       new Date().toLocaleString('pt-BR'),
       d.tipoVeiculo || '',
       eInfrutifero ? '' : (d.pacotes || ''),
@@ -335,8 +378,8 @@ app.put('/api/editar-report', async (req, res) => {
       eInfrutifero ? '' : (d.plv || ''),
       eInfrutifero ? '' : (d.ocupadas || ''),
       new Date().toLocaleString('pt-BR'),
-      eInfrutifero ? '' : (d.fotos?.bau || ''),
-      eInfrutifero ? '' : (d.fotos?.romaneio || ''),
+      eInfrutifero ? '' : (urlBau || d.fotos?.bau || ''),
+      eInfrutifero ? '' : (urlRomaneio || d.fotos?.romaneio || ''),
       'REPORTADO',
       new Date().toLocaleString('pt-BR'),
       d.observacao || '',
