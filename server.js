@@ -124,19 +124,34 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// 2. Rota do Pátio Pendente
+// 2. Rota do Pátio Pendente (Atualizada para filtrar veículos já reportados)
 app.get('/api/patio', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
     const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'PATIO_PENDENTE!A2:X'
+    
+    // Busca dados do pátio e dos relatórios em paralelo para maior performance
+    const [responsePatio, responseReports] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'PATIO_PENDENTE!A2:X' }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'REPORTS!A2:AP' })
+    ]);
+
+    const rowsPatio = responsePatio.data.values || [];
+    const rowsReports = responseReports.data.values || [];
+
+    // Cria um conjunto com os protocolos que já possuem report salvo
+    const protocolosReportados = new Set();
+    rowsReports.forEach(r => {
+      const proto = String(r[2] || '').trim(); // Protocolo na aba REPORTS fica na coluna C (índice 2)
+      if (proto) protocolosReportados.add(proto);
     });
 
-    const rows = response.data.values || [];
-    const patio = rows
-      .filter(r => r[0] && String(r[0]).trim() !== '')
+    const patio = rowsPatio
+      .filter(r => {
+        const protocolo = String(r[0] || '').trim();
+        // Mantém apenas se tiver protocolo E se ele AINDA NÃO foi reportado
+        return protocolo !== '' && !protocolosReportados.has(protocolo);
+      })
       .map(r => ({
         protocolo: r[0] || '',
         routeId: r[1] || '',
@@ -166,6 +181,7 @@ app.get('/api/patio', async (req, res) => {
 
     return res.status(200).json(patio);
   } catch (err) {
+    console.error('Erro ao carregar pátio:', err.message);
     return res.status(500).json({ error: 'Erro ao carregar pátio pendente.' });
   }
 });
@@ -242,7 +258,6 @@ app.post('/api/salvar-report', async (req, res) => {
     const agora = new Date().toLocaleString('pt-BR');
     const protocolo = d.protocolo || 'geral';
 
-    // Salva as fotos localmente para evitar estourar o limite de 50.000 caracteres da célula
     const urlLacre = salvarImagemLocal(d.fotos?.lacre, 'lacre', protocolo);
     const urlBau = salvarImagemLocal(d.fotos?.bau, 'bau', protocolo);
     const urlRomaneio = salvarImagemLocal(d.fotos?.romaneio, 'romaneio', protocolo);
@@ -340,7 +355,6 @@ app.put('/api/editar-report', async (req, res) => {
     const eInfrutifero = String(d.infrutifero || '').trim().toUpperCase() === 'SIM';
     const protocolo = d.protocolo;
 
-    // Salva as fotos atualizadas localmente caso tenham sido alteradas
     const urlLacre = salvarImagemLocal(d.fotos?.lacre, 'lacre', protocolo);
     const urlBau = salvarImagemLocal(d.fotos?.bau, 'bau', protocolo);
     const urlRomaneio = salvarImagemLocal(d.fotos?.romaneio, 'romaneio', protocolo);
