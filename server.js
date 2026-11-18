@@ -134,7 +134,7 @@ app.get('/api/sincronizar-patio', async (req, res) => {
   return res.status(200).json({ ok: true, message: 'O pátio agora é lido diretamente do Google Sheets em tempo real!' });
 });
 
-// ===== FUNÇÃO AUXILIAR PARA SALVAR IMAGENS LOCALMENTE =====
+// ===== FUNÇÃO AUXILIAR PARA SALVAR IMAGENS (COMPATÍVEL COM NUVEM E RENDER) =====
 function salvarImagemLocal(base64Data, prefixo, protocolo, req = null) {
   if (!base64Data || typeof base64Data !== 'string' || !base64Data.startsWith('data:image')) {
     return '';
@@ -162,7 +162,10 @@ function salvarImagemLocal(base64Data, prefixo, protocolo, req = null) {
       const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
       const host = req.get('host');
       baseUrl = `${protocol}://${host}`;
+    } else {
+      baseUrl = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
     }
+    
     return `${baseUrl}/uploads/${nomeFicheiro}`;
   } catch (erro) {
     console.error("Erro ao salvar imagem:", erro);
